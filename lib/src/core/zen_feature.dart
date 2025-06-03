@@ -1,14 +1,6 @@
-// lib/src/core/zen_feature.dart
-
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'atom.dart';
-import 'derived.dart';
-import 'command.dart';
-import 'store.dart';
-import '../async/zen_future.dart';
-import '../async/zen_stream.dart';
-import '../devtools/debug_logger.dart';
+import '../../zenstate.dart'; // Ensure this imports your updated Command, FunctionCommand, SimpleFunctionCommand, DebugLogger, Store, Atom, Derived, ZenFuture, ZenStream, SmartAtom, StateOptimizer, ContextFactor classes
 
 /// Status of a feature module.
 enum FeatureStatus {
@@ -24,6 +16,9 @@ enum FeatureStatus {
   /// The feature initialization failed.
   failed,
 
+  /// The feature is currently being disposed.
+  disposing,
+
   /// The feature has been disposed.
   disposed,
 }
@@ -36,6 +31,7 @@ enum FeatureStatus {
 /// hydration, and disposal.
 ///
 /// ```dart
+/// // Example of a ZenFeature implementation
 /// class AuthFeature extends ZenFeature {
 ///   @override
 ///   String get name => 'auth';
@@ -46,22 +42,50 @@ enum FeatureStatus {
 ///   late final isLoggedInDerived = registerDerived('isLoggedIn',
 ///     () => tokenAtom.value.isNotEmpty);
 ///
-///   // Commands
-///   late final loginCommand = registerCommand<void>(
+///   // Commands (using the new registration methods)
+///   late final loginCommand = registerFunctionCommand<LoginPayload, User>(
 ///     'login',
-///     (String username, String password) async {
-///       final result = await authService.login(username, password);
-///       userAtom.value = result.user;
-///       tokenAtom.value = result.token;
+///     (payload) async {
+///       // In a real app, this would interact with an auth service
+///       // final result = await authService.login(payload.username, payload.password);
+///       // userAtom.value = result.user;
+///       // tokenAtom.value = result.token;
+///       print('Login command executed for ${payload.username}');
+///       return User(payload.username); // Placeholder for actual User object
 ///     },
+///     name: 'LoginUserCommand', // Optional: provide a more specific name for the command itself
+///     validate: (payload) {
+///       if (payload.username.isEmpty || payload.password.isEmpty) {
+///         throw ArgumentError('Username and password cannot be empty.');
+///       }
+///     },
+///     undo: (payload) {
+///       print('Login command undone for ${payload.username}');
+///       // Logic to revert login state if possible
+///     }
 ///   );
 ///
-///   late final logoutCommand = registerCommand<void>(
+///   late final logoutCommand = registerSimpleCommand<void>(
 ///     'logout',
 ///     () {
-///       userAtom.value = User.guest();
-///       tokenAtom.value = '';
+///       // userAtom.value = User.guest();
+///       // tokenAtom.value = '';
+///       print('Logout command executed');
 ///     },
+///     name: 'LogoutUserCommand',
+///     canUndo: false, // Logout might not always be undoable
+///   );
+///
+///   // You can still register custom Command subclasses or pre-instantiated FunctionCommands
+///   late final specificAdminCommand = registerCommand(
+///     'adminAction',
+///     FunctionCommand<String, bool>(
+///       (action) {
+///         print('Performing admin action: $action');
+///         return true;
+///       },
+///       name: 'PerformAdminAction',
+///     )
 ///   );
 ///
 ///   @override
@@ -69,33 +93,49 @@ enum FeatureStatus {
 ///     // Initialize the feature
 ///     await super.initialize();
 ///
-///     // Additional initialization logic
-///     final savedToken = await tokenStorage.getToken();
-///     if (savedToken.isNotEmpty) {
-///       try {
-///         final user = await authService.getUserByToken(savedToken);
-///         userAtom.value = user;
-///         tokenAtom.value = savedToken;
-///       } catch (e) {
-///         // Token is invalid, clear it
-///         tokenAtom.value = '';
-///       }
-///     }
+///     // Additional initialization logic specific to AuthFeature
+///     // For example, load saved token from storage
+///     // final savedToken = await tokenStorage.getToken();
+///     // if (savedToken.isNotEmpty) {
+///     //   try {
+///     //     final user = await authService.getUserByToken(savedToken);
+///     //     userAtom.value = user;
+///     //     tokenAtom.value = savedToken;
+///     //   } catch (e) {
+///     //     // Token is invalid, clear it
+///     //     tokenAtom.value = '';
+///     //   }
+///     // }
+///     print('AuthFeature initialized');
 ///   }
 ///
 ///   @override
 ///   void setupHydration() {
 ///     // Setup hydration for atoms that need persistence
-///     tokenAtom.hydratePrimitive<String>(key: 'auth_token');
+///     // tokenAtom.hydratePrimitive<String>(key: 'auth_token');
 ///   }
 ///
 ///   @override
 ///   void dispose() {
 ///     // Custom cleanup logic
-///     authService.dispose();
+///     // authService.dispose();
 ///     super.dispose();
+///     print('AuthFeature disposed');
 ///   }
 /// }
+///
+/// // --- Placeholder classes for the example (replace with your actual classes) ---
+/// class LoginPayload {
+///   final String username;
+///   final String password;
+///   LoginPayload(this.username, this.password);
+/// }
+/// class User {
+///   final String name;
+///   User([this.name = 'Guest']);
+///   static User guest() => User('Guest');
+/// }
+/// // --- End Placeholder classes ---
 /// ```
 abstract class ZenFeature {
   /// The name of the feature.
@@ -133,7 +173,8 @@ abstract class ZenFeature {
   final Map<String, Derived> _derived = {};
 
   /// The commands registered with this feature.
-  final Map<String, dynamic> _commands = {};
+  /// Changed from `dynamic` to `Command<dynamic, dynamic>` for better type safety.
+  final Map<String, Command<dynamic, dynamic>> _commands = {};
 
   /// The ZenFuture instances registered with this feature.
   final Map<String, ZenFuture> _futures = {};
@@ -160,6 +201,38 @@ abstract class ZenFeature {
     }
   }
 
+  /// Called before the feature is initialized.
+  /// Override this method to perform any setup before initialization.
+  Future<void> onBeforeInitialize() async {}
+
+  /// Called after the feature is initialized.
+  /// Override this method to perform any setup after initialization.
+  Future<void> onAfterInitialize() async {}
+
+  /// Called when the feature is being disposed.
+  /// Override this method to perform cleanup before disposal.
+  Future<void> onBeforeDispose() async {}
+
+  /// Called when the feature is being paused (e.g., app going to background).
+  /// Override this method to handle pause state.
+  Future<void> onPause() async {}
+
+  /// Called when the feature is being resumed (e.g., app coming to foreground).
+  /// Override this method to handle resume state.
+  Future<void> onResume() async {}
+
+  /// Called when the feature encounters an error.
+  /// Override this method to handle errors.
+  Future<void> onError(Object error, StackTrace stackTrace) async {
+    if (DebugLogger.isEnabled) {
+      DebugLogger.instance.logError(
+        'Error in feature: $name',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
   /// Initializes the feature.
   ///
   /// This method should be called before using the feature.
@@ -180,6 +253,9 @@ abstract class ZenFeature {
     }
 
     try {
+      // Call before initialize hook
+      await onBeforeInitialize();
+
       // Initialize dependencies first
       for (final dependency in _dependencies) {
         await dependency.initialize();
@@ -191,6 +267,9 @@ abstract class ZenFeature {
       _status = FeatureStatus.initialized;
       _initializeCompleter.complete();
 
+      // Call after initialize hook
+      await onAfterInitialize();
+
       if (DebugLogger.isEnabled) {
         DebugLogger.instance.logAction('Feature initialized: $name');
       }
@@ -198,13 +277,8 @@ abstract class ZenFeature {
       _status = FeatureStatus.failed;
       _initializeCompleter.completeError(e, stackTrace);
 
-      if (DebugLogger.isEnabled) {
-        DebugLogger.instance.logError(
-          'Failed to initialize feature: $name',
-          e,
-          stackTrace,
-        );
-      }
+      // Call error handler
+      await onError(e, stackTrace);
 
       rethrow;
     }
@@ -257,22 +331,21 @@ abstract class ZenFeature {
     final visited = <String>{};
     final recursionStack = <String>{};
 
-    bool hasCycle(String currentName) {
-      if (!visited.contains(currentName)) {
-        visited.add(currentName);
-        recursionStack.add(currentName);
+    bool hasCycle(ZenFeature currentFeature) {
+      final currentName = currentFeature.name;
+      if (recursionStack.contains(currentName)) {
+        return true; // Cycle detected
+      }
+      if (visited.contains(currentName)) {
+        return false; // Already visited and no cycle found
+      }
 
-        final currentFeature = _dependencies.firstWhere(
-          (f) => f.name == currentName,
-          orElse: () => feature,
-        );
+      visited.add(currentName);
+      recursionStack.add(currentName);
 
-        for (final dependency in currentFeature.dependencies) {
-          if (!visited.contains(dependency.name) && hasCycle(dependency.name)) {
-            return true;
-          } else if (recursionStack.contains(dependency.name)) {
-            return true;
-          }
+      for (final dependency in currentFeature.dependencies) {
+        if (hasCycle(dependency)) {
+          return true;
         }
       }
 
@@ -280,26 +353,94 @@ abstract class ZenFeature {
       return false;
     }
 
-    return hasCycle(feature.name);
+    // To check if adding 'feature' creates a cycle, we temporarily consider it
+    // a dependency of 'this' and then run the cycle detection starting from 'feature'.
+    // If 'feature' already has a dependency that leads back to 'this', that's a cycle.
+    // A more robust cycle detection needs to consider the entire graph, not just a single path.
+    // For simplicity, we check if the new dependency already exists in the recursion stack
+    // if 'this' is part of the dependency chain of 'feature'.
+
+    // This simplified check focuses on direct cycles. For a comprehensive graph cycle detection,
+    // you might need a more advanced algorithm (e.g., Tarjan's or Kosaraju's algorithm).
+    // For now, let's just check if 'feature' itself has 'this' as a dependency in its transitive closure.
+    // This is a common and usually sufficient check for simple dependency graphs.
+
+    // Simulate adding the dependency to check for a cycle
+    // We add 'feature' to a temporary dependency list to test the cycle.
+    // This requires a more complex `_findCycle` logic.
+    // For now, let's keep the existing logic that checks if the proposed new feature
+    // itself has a dependency that would point back to the current feature or an
+    // ancestor.
+
+    // A simpler and often sufficient check for a cycle in `dependsOn` is to traverse
+    // the dependency graph from the `feature` being added and see if `this` (`ZenFeature` instance)
+    // is ever encountered.
+
+    // Perform a depth-first search starting from 'feature' to see if 'this' is reachable.
+    final tempVisited = <String>{};
+    bool isReachable(ZenFeature startNode, ZenFeature targetNode) {
+      if (startNode.name == targetNode.name) return true;
+      if (tempVisited.contains(startNode.name)) return false;
+      tempVisited.add(startNode.name);
+
+      for (final dep in startNode.dependencies) {
+        if (isReachable(dep, targetNode)) return true;
+      }
+      return false;
+    }
+
+    return isReachable(
+        feature, this); // Does 'feature' eventually depend on 'this'?
   }
 
   /// Checks if a version satisfies a version constraint.
+  ///
+  /// This is a basic implementation and does not fully support all semver ranges.
+  /// For robust semver, consider using a package like `pub_semver`.
   bool _isVersionCompatible(String version, String constraint) {
-    // Simple version comparison for now
-    // TODO: Implement proper semver range parsing and comparison
-    final versionParts = version.split('.');
-    final constraintParts = constraint.split('.');
+    if (constraint.isEmpty)
+      return true; // No constraint means any version is compatible
 
-    for (var i = 0; i < 3; i++) {
-      final versionNum = int.tryParse(versionParts[i]) ?? 0;
-      final constraintNum = int.tryParse(constraintParts[i]) ?? 0;
+    // Basic handling for '^' (caret) operator: compatible with minor/patch updates
+    if (constraint.startsWith('^')) {
+      final constraintWithoutCaret = constraint.substring(1);
+      final constraintParts =
+          constraintWithoutCaret.split('.').map(int.tryParse).toList();
+      final versionParts = version.split('.').map(int.tryParse).toList();
 
-      if (versionNum != constraintNum) {
-        return false;
+      if (constraintParts.length < 1 || versionParts.length < 1) return false;
+
+      final cMajor = constraintParts[0] ?? -1;
+      final vMajor = versionParts[0] ?? -1;
+
+      if (cMajor != vMajor) return false; // Major versions must match for '^'
+
+      if (cMajor == 0) {
+        // Special case for 0.x.y (only patch updates are compatible)
+        if (constraintParts.length < 2 || versionParts.length < 2) return false;
+        final cMinor = constraintParts[1] ?? -1;
+        final vMinor = versionParts[1] ?? -1;
+        if (cMinor != vMinor) return false;
+        // All subsequent parts must be greater or equal
+        for (int i = 2; i < constraintParts.length; i++) {
+          final cPart = constraintParts[i] ?? -1;
+          final vPart = versionParts.length > i ? (versionParts[i] ?? -1) : 0;
+          if (vPart < cPart) return false;
+        }
+      } else {
+        // For 1.x.y, 2.x.y etc. (minor and patch updates are compatible)
+        for (int i = 0; i < constraintParts.length; i++) {
+          final cPart = constraintParts[i] ?? -1;
+          final vPart = versionParts.length > i ? (versionParts[i] ?? -1) : 0;
+          if (vPart < cPart)
+            return false; // Version must be at least the constraint
+        }
       }
+      return true;
     }
 
-    return true;
+    // Basic exact match for now
+    return version == constraint;
   }
 
   /// Registers an atom with this feature.
@@ -335,22 +476,134 @@ abstract class ZenFeature {
     return derived;
   }
 
-  /// Registers a command with this feature.
+  /// Registers an already instantiated [Command] with this feature.
+  ///
+  /// Use this when you have a custom [Command] subclass (e.g., `AddCommand`)
+  /// or a pre-built [FunctionCommand] instance that you want to register.
   ///
   /// ```dart
-  /// late final incrementCommand = registerCommand<void>(
-  ///   'increment',
-  ///   () => counterAtom.update((value) => value + 1),
+  /// // Example registering a custom Command subclass
+  /// class MyCustomCommand extends Command<int, void> {
+  ///   MyCustomCommand() : super(name: 'MyCustomCommand');
+  ///   @override
+  ///   Future<void> executeInternal(int payload) async => print('Custom: $payload');
+  ///   @override
+  ///   Future<void> undoInternal() async => print('Custom Undo');
+  /// }
+  /// late final customCmd = registerCommand('myCustomCmd', MyCustomCommand());
+  ///
+  /// // Example registering an already created FunctionCommand
+  /// final someFunctionCommand = FunctionCommand<String, String>(
+  ///   (input) => input.toUpperCase(),
+  ///   name: 'ToUpper',
   /// );
+  /// late final toUpperCmd = registerCommand('toUpper', someFunctionCommand);
   /// ```
-  Command<R> registerCommand<R>(String key, Function execute) {
-    final command = Command<R>(execute, name: '$name.$key');
+  Command<TPayload, TResult> registerCommand<TPayload, TResult>(
+      String key, Command<TPayload, TResult> command) {
     _commands[key] = command;
 
     if (DebugLogger.isEnabled) {
-      DebugLogger.instance.logAction('Registered command: $name.$key');
+      DebugLogger.instance
+          .logAction('Registered command: $name.$key (${command.name})');
     }
 
+    return command;
+  }
+
+  /// Registers a functional command with this feature using a payload.
+  ///
+  /// This is a convenience method to quickly define commands using a lambda
+  /// function, where the command takes a single payload argument.
+  ///
+  /// ```dart
+  /// late final loginCmd = registerFunctionCommand<LoginPayload, User>(
+  ///   'login',
+  ///   (payload) async {
+  ///     // Logic using payload.username, payload.password
+  ///     return fetchedUser; // Return the result
+  ///   },
+  ///   undo: (payload) {
+  ///     // Undo logic using the original payload
+  ///   },
+  ///   validate: (payload) {
+  ///     if (payload.username.isEmpty) throw ArgumentError('Username required');
+  ///   },
+  ///   name: 'LoginUserAction', // Optional custom name for logging/devtools
+  /// );
+  /// ```
+  FunctionCommand<TPayload, TResult> registerFunctionCommand<TPayload, TResult>(
+    String key,
+    FutureOr<TResult> Function(TPayload payload) execute, {
+    String? commandName,
+    FutureOr<void> Function(TPayload payload)? undo,
+    void Function(TPayload payload)? validate,
+    bool canUndo = true,
+    bool addToHistory = true,
+  }) {
+    final command = FunctionCommand.payload(
+      execute,
+      name: commandName ?? '$name.$key',
+      undo: undo,
+      validate: validate,
+      canUndo: canUndo,
+      addToHistory: addToHistory,
+    );
+    registerCommand<TPayload, TResult>(key, command);
+    return command;
+  }
+
+  /// Registers a simple functional command with no payload.
+  ///
+  /// This is a convenience method for commands that perform an action
+  /// without requiring any input arguments (i.e., payload is `void`).
+  ///
+  /// ```dart
+  /// late final logoutCmd = registerSimpleCommand<void>(
+  ///   'logout',
+  ///   () {
+  ///     // Clear session, etc.
+  ///   },
+  ///   canUndo: false, // Logout might not always be undoable
+  ///   name: 'LogoutUserAction', // Optional custom name
+  /// );
+  /// ```
+  /// Registers a simple functional command with no payload.
+  ///
+  /// This is a convenience method for commands that perform an action
+  /// without requiring any input arguments (i.e., payload is `void`).
+  ///
+  /// ```dart
+  /// late final logoutCmd = registerSimpleCommand<void>(
+  ///   'logout',
+  ///   () {
+  ///     // Clear session, etc.
+  ///   },
+  ///   canUndo: false, // Logout might not always be undoable
+  ///   name: 'LogoutUserAction', // Optional custom name
+  /// );
+  /// ```
+// Corrected SimpleFunctionCommand registration
+  FunctionCommand<void, TResult> registerSimpleCommand<TResult>(
+    String key,
+    FutureOr<TResult> Function() execute, {
+    String? commandName,
+    FutureOr<void> Function()? undo,
+    void Function()? validate,
+    bool canUndo = true,
+    bool addToHistory = true,
+  }) {
+    final command = FunctionCommand.simple(
+      // TPayload is void here implicitly
+      execute,
+      name: commandName ?? '$name.$key',
+      undo: undo,
+      validate: validate,
+      canUndo: canUndo,
+      addToHistory: addToHistory,
+    );
+    registerCommand<void, TResult>(
+        key, command); // Explicitly void for registerCommand
     return command;
   }
 
@@ -386,6 +639,68 @@ abstract class ZenFeature {
     return stream;
   }
 
+  /// Smart atoms extend regular atoms with optimization strategies and context awareness.
+  ///
+  /// ```dart
+  /// late final counterAtom = registerSmartAtom(
+  ///   'counter',
+  ///   0,
+  ///   optimizer: DebouncingOptimizer(duration: Duration(milliseconds: 300)),
+  ///   contextFactors: [BatteryFactor(), NetworkFactor()],
+  /// );
+  /// ```
+  SmartAtom<T> registerSmartAtom<T>(
+    String key,
+    T initialValue, {
+    String? category,
+    StateOptimizer<T>? optimizer,
+    List<ContextFactor>? contextFactors,
+    int historyLimit = 50,
+    String? persistenceKey,
+    String Function(T)? serializer,
+    T Function(String)? deserializer,
+  }) {
+    // Create the smart atom with the given parameters
+    final smartAtom = SmartAtom<T>(
+      name: '$name.$key',
+      initialValue: initialValue,
+      optimizer: optimizer,
+      contextFactors: contextFactors,
+      historyLimit: historyLimit,
+      persistenceKey: persistenceKey,
+      serializer: serializer,
+      deserializer: deserializer,
+    );
+
+    // Register the atom with the store and feature
+    _atoms[key] = smartAtom;
+
+    if (DebugLogger.isEnabled) {
+      DebugLogger.instance.logAction('Registered smart atom: $name.$key');
+
+      // Log additional details about optimization and context awareness
+      if (optimizer != null) {
+        DebugLogger.instance.logAction(
+          'Smart atom $name.$key using optimizer: ${optimizer.runtimeType}',
+        );
+      }
+
+      if (contextFactors != null && contextFactors.isNotEmpty) {
+        DebugLogger.instance.logAction(
+          'Smart atom $name.$key using context factors: ${contextFactors.map((f) => f.name).join(', ')}',
+        );
+      }
+
+      if (persistenceKey != null) {
+        DebugLogger.instance.logAction(
+          'Smart atom $name.$key configured for persistence with key: $persistenceKey',
+        );
+      }
+    }
+
+    return smartAtom;
+  }
+
   /// Gets an atom by key.
   Atom<T> getAtom<T>(String key) {
     return _store.getAtom<T>(key);
@@ -397,13 +712,24 @@ abstract class ZenFeature {
   }
 
   /// Gets a command by key.
-  Command<R> getCommand<R>(String key) {
+  ///
+  /// This method is generic, allowing you to specify the expected
+  /// TPayload and TResult types for the retrieved command.
+  ///
+  /// ```dart
+  /// final loginCmd = myFeature.getCommand<LoginPayload, User>('login');
+  /// await loginCmd(LoginPayload('user', 'pass'));
+  /// ```
+  Command<TPayload, TResult> getCommand<TPayload, TResult>(String key) {
     final command = _commands[key];
     if (command == null) {
-      throw StateError('No command found with key: $key');
+      throw StateError('No command found with key: $key in feature ${name}.');
     }
-    if (command is! Command<R>) {
-      throw StateError('Command with key $key is not of type Command<$R>');
+    // Safely cast to the expected Command type with its specific generics
+    if (command is! Command<TPayload, TResult>) {
+      throw StateError(
+          'Command with key "$key" in feature "${name}" is not of expected type '
+          'Command<$TPayload, $TResult>. Actual type: ${command.runtimeType}.');
     }
     return command;
   }
@@ -450,7 +776,8 @@ abstract class ZenFeature {
   Map<String, Derived> get derived => Map.unmodifiable(_derived);
 
   /// Gets all commands registered with this feature.
-  Map<String, dynamic> get commands => Map.unmodifiable(_commands);
+  Map<String, Command<dynamic, dynamic>> get commands =>
+      Map.unmodifiable(_commands);
 
   /// Gets all ZenFuture instances registered with this feature.
   Map<String, ZenFuture> get futures => Map.unmodifiable(_futures);
@@ -463,42 +790,65 @@ abstract class ZenFeature {
   /// Override this method to add custom disposal logic.
   /// Make sure to call `super.dispose()` at the end.
   @mustCallSuper
-  void dispose() {
-    if (_status == FeatureStatus.disposed) {
+  Future<void> dispose() async {
+    if (_status == FeatureStatus.disposed ||
+        _status == FeatureStatus.disposing) {
       return;
     }
+
+    _status = FeatureStatus.disposing;
 
     if (DebugLogger.isEnabled) {
       DebugLogger.instance.logAction('Disposing feature: $name');
     }
 
-    // Dispose all registered state
-    for (final stream in _streams.values) {
-      stream.dispose();
+    try {
+      // Call before dispose hook
+      await onBeforeDispose();
+
+      // Dispose all registered state that have dispose methods
+      for (final stream in _streams.values) {
+        stream.dispose();
+      }
+      _streams.clear();
+
+      for (final future in _futures.values) {
+        future.dispose();
+      }
+      _futures.clear();
+
+      // Clear all registered state maps
+      _atoms.clear();
+      _derived.clear();
+      _commands.clear();
+
+      // Dispose the store
+      _store.dispose();
+
+      // Clear dependencies
+      _dependencies.clear();
+
+      _status = FeatureStatus.disposed;
+
+      if (DebugLogger.isEnabled) {
+        DebugLogger.instance.logAction('Feature disposed: $name');
+      }
+    } catch (e, stackTrace) {
+      await onError(e, stackTrace);
+      rethrow;
     }
-    _streams.clear();
+  }
 
-    for (final future in _futures.values) {
-      future.dispose();
-    }
-    _futures.clear();
+  /// Pauses the feature.
+  Future<void> pause() async {
+    if (_status != FeatureStatus.initialized) return;
+    await onPause();
+  }
 
-    // Clear all registered state
-    _atoms.clear();
-    _derived.clear();
-    _commands.clear();
-
-    // Dispose the store
-    _store.dispose();
-
-    // Clear dependencies
-    _dependencies.clear();
-
-    _status = FeatureStatus.disposed;
-
-    if (DebugLogger.isEnabled) {
-      DebugLogger.instance.logAction('Feature disposed: $name');
-    }
+  /// Resumes the feature.
+  Future<void> resume() async {
+    if (_status != FeatureStatus.initialized) return;
+    await onResume();
   }
 
   @override

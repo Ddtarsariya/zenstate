@@ -1,5 +1,3 @@
-// lib/src/core/scope.dart
-
 import 'package:flutter/widgets.dart';
 import 'store.dart';
 import 'store_provider.dart';

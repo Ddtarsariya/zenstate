@@ -1,5 +1,3 @@
-// lib/src/devtools/debug_logger.dart
-
 import 'dart:async';
 import 'dart:developer' as developer;
 import '../core/atom.dart';

@@ -1,4 +1,3 @@
-// test/counter_feature_test.dart
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zenstate/zenstate.dart';
 
@@ -16,21 +15,21 @@ class CounterFeature extends ZenFeature {
   );
 
   // Commands
-  late final incrementCommand = registerCommand<void>(
+  late final incrementCommand = registerSimpleCommand(
     'increment',
     () {
       counterAtom.update((value) => value + 1);
     },
   );
 
-  late final decrementCommand = registerCommand<void>(
+  late final decrementCommand = registerSimpleCommand(
     'decrement',
     () {
       counterAtom.update((value) => value - 1);
     },
   );
 
-  late final resetCommand = registerCommand<void>(
+  late final resetCommand = registerSimpleCommand(
     'reset',
     () {
       counterAtom.value = 0;

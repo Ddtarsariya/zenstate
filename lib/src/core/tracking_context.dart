@@ -1,5 +1,3 @@
-// lib/src/core/tracking_context.dart
-
 import 'atom.dart';
 
 class TrackingContext {

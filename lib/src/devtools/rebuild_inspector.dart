@@ -1,5 +1,3 @@
-// lib/src/devtools/rebuild_inspector.dart
-
 import 'package:flutter/widgets.dart';
 import 'debug_logger.dart';
 

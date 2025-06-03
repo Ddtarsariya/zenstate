@@ -1,5 +1,3 @@
-// lib/src/plugins/plugin_interface.dart
-
 import '../core/atom.dart';
 import '../core/command.dart';
 

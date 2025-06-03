@@ -1,5 +1,3 @@
-// lib/src/widgets/zen_builder.dart
-
 import 'package:flutter/widgets.dart';
 import '../core/atom.dart';
 import '../core/derived.dart';

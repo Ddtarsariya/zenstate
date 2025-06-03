@@ -1,5 +1,3 @@
-// lib/src/widgets/zen_feature_provider.dart
-
 import 'package:flutter/material.dart';
 import '../core/zen_feature.dart';
 import '../core/zen_feature_manager.dart';
@@ -23,6 +21,15 @@ class ZenFeatureProvider extends StatefulWidget {
   final Widget Function(
       Object error, StackTrace stackTrace, VoidCallback retry)? errorBuilder;
 
+  /// Called when features are being initialized.
+  final void Function()? onInitializing;
+
+  /// Called when features have been initialized.
+  final void Function()? onInitialized;
+
+  /// Called when feature initialization fails.
+  final void Function(Object error, StackTrace stackTrace)? onError;
+
   /// Creates a new [ZenFeatureProvider] widget.
   const ZenFeatureProvider({
     super.key,
@@ -30,6 +37,9 @@ class ZenFeatureProvider extends StatefulWidget {
     this.showLoadingIndicator = true,
     this.loadingIndicator,
     this.errorBuilder,
+    this.onInitializing,
+    this.onInitialized,
+    this.onError,
   });
 
   @override
@@ -76,7 +86,8 @@ class ZenFeatureProvider extends StatefulWidget {
   }
 }
 
-class _ZenFeatureProviderState extends State<ZenFeatureProvider> {
+class _ZenFeatureProviderState extends State<ZenFeatureProvider>
+    with WidgetsBindingObserver {
   /// Whether features are initialized.
   bool _initialized = false;
 
@@ -88,11 +99,61 @@ class _ZenFeatureProviderState extends State<ZenFeatureProvider> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeFeatures();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+        _pauseFeatures();
+        break;
+      case AppLifecycleState.resumed:
+        _resumeFeatures();
+        break;
+      default:
+        break;
+    }
+  }
+
+  Future<void> _pauseFeatures() async {
+    try {
+      await ZenFeatureManager.instance.pauseAll();
+    } catch (e, stackTrace) {
+      if (DebugLogger.isEnabled) {
+        DebugLogger.instance.logError(
+          'Error pausing features',
+          e,
+          stackTrace,
+        );
+      }
+    }
+  }
+
+  Future<void> _resumeFeatures() async {
+    try {
+      await ZenFeatureManager.instance.resumeAll();
+    } catch (e, stackTrace) {
+      if (DebugLogger.isEnabled) {
+        DebugLogger.instance.logError(
+          'Error resuming features',
+          e,
+          stackTrace,
+        );
+      }
+    }
   }
 
   Future<void> _initializeFeatures() async {
     try {
+      widget.onInitializing?.call();
       await ZenFeatureManager.instance.initialize();
       _features = Map.from(ZenFeatureManager.instance.features);
 
@@ -102,9 +163,9 @@ class _ZenFeatureProviderState extends State<ZenFeatureProvider> {
           _error = null;
           _errorStackTrace = null;
         });
+        widget.onInitialized?.call();
       }
     } catch (e, stackTrace) {
-      // Log the error with stack trace
       if (DebugLogger.isEnabled) {
         DebugLogger.instance.logError(
           'Error initializing features',
@@ -113,7 +174,8 @@ class _ZenFeatureProviderState extends State<ZenFeatureProvider> {
         );
       }
 
-      // Show error UI if mounted
+      widget.onError?.call(e, stackTrace);
+
       if (mounted) {
         setState(() {
           _initialized = true;
@@ -160,13 +222,6 @@ class _ZenFeatureProviderState extends State<ZenFeatureProvider> {
       },
       child: widget.child,
     );
-  }
-
-  @override
-  void dispose() {
-    // Don't dispose features here, as they might be used elsewhere
-    // Features should be disposed by the application when it's shutting down
-    super.dispose();
   }
 }
 

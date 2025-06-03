@@ -1,5 +1,3 @@
-// lib/src/extensions/zen_feature_extensions.dart
-
 import 'package:flutter/widgets.dart';
 import '../core/zen_feature.dart';
 import '../widgets/zen_feature_provider.dart';

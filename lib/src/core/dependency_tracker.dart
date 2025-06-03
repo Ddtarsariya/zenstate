@@ -1,5 +1,3 @@
-// lib/src/core/dependency_tracker.dart
-
 import 'atom.dart';
 
 /// A class for tracking dependencies between atoms and derived values.

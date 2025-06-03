@@ -1,5 +1,3 @@
-// lib/src/core/store.dart
-
 import 'atom.dart';
 import 'derived.dart';
 import '../plugins/plugin_interface.dart';
@@ -25,7 +23,7 @@ class Store {
   final Map<String, Map<String, dynamic>> _categories = {};
 
   /// The current transaction, if any.
-  Transaction? _currentTransaction;
+  StoreTransaction? _currentTransaction;
 
   /// Creates a new [Store] with the given name.
   Store({this.name});
@@ -46,7 +44,7 @@ class Store {
       throw StateError('Transaction already in progress');
     }
 
-    _currentTransaction = Transaction();
+    _currentTransaction = StoreTransaction();
     try {
       updates();
       _currentTransaction!.commit();
@@ -184,7 +182,7 @@ class Store {
 }
 
 /// A transaction that batches state changes together.
-class Transaction {
+class StoreTransaction {
   /// The changes made during this transaction.
   final List<_StateChange> _changes = [];
 

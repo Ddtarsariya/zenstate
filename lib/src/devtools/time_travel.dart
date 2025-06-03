@@ -1,5 +1,3 @@
-// lib/src/devtools/time_travel.dart
-
 import 'dart:convert';
 import '../core/atom.dart';
 import 'debug_logger.dart';
