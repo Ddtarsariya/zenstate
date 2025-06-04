@@ -1,3 +1,4 @@
+import 'default_optimizer.dart';
 import 'state_optimizer.dart';
 import 'debouncing_optimizer.dart';
 import 'throttling_optimizer.dart';

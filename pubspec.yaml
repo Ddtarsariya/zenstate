@@ -26,6 +26,7 @@ dependencies:
   connectivity_plus: ^6.1.4
   battery_plus: ^6.2.1
   uuid: ^4.5.1
+  pub_semver: ^2.2.0
 
 dev_dependencies:
   flutter_test:

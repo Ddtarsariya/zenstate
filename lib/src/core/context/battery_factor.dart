@@ -38,23 +38,51 @@ class BatteryFactor implements ContextFactor {
   /// Stream subscription for battery state changes
   StreamSubscription? _batteryStateSubscription;
 
+  /// How often to update the battery level
+  final Duration updateInterval;
+
   /// Creates a new BatteryFactor with the default Battery implementation
-  BatteryFactor() : _battery = Battery();
+  BatteryFactor({
+    this.updateInterval = const Duration(minutes: 1),
+  }) : _battery = Battery();
 
   /// Creates a BatteryFactor with a custom Battery implementation (for testing)
+  /// Creates a BatteryFactor with a custom Battery implementation (for testing)
   @visibleForTesting
-  BatteryFactor.withBattery(this._battery);
+  BatteryFactor.withBattery(
+    this._battery, {
+    this.updateInterval = const Duration(minutes: 1),
+  });
 
   /// Creates a BatteryFactor with fixed values (for testing)
+  ///
+  /// This constructor creates a BatteryFactor that returns fixed values,
+  /// which is useful for testing components that depend on battery state
+  /// without having to mock the actual battery.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Create a factor that simulates low battery
+  /// final lowBatteryFactor = BatteryFactor.withFixedValues(
+  ///   batteryLevel: 0.1,
+  ///   isCharging: false,
+  /// );
+  ///
+  /// // Create a factor that simulates charging
+  /// final chargingFactor = BatteryFactor.withFixedValues(
+  ///   batteryLevel: 0.5,
+  ///   isCharging: true,
+  /// );
+  /// ```
   @visibleForTesting
   BatteryFactor.withFixedValues({
     double batteryLevel = 1.0,
     bool isCharging = true,
-  }) : _battery = Battery() {
+  })  : _battery = Battery(),
+        updateInterval = const Duration(minutes: 1) {
     _batteryLevel = batteryLevel.clamp(0.0, 1.0);
     _isCharging = isCharging;
     _isSupported = true;
-    // No need to initialize timers or subscriptions for fixed values
   }
 
   @override
@@ -75,7 +103,7 @@ class BatteryFactor implements ContextFactor {
   @override
   void initialize() {
     // For fixed values, skip initialization
-    if (this is BatteryFactor && this.runtimeType != BatteryFactor) {
+    if (this is BatteryFactor && runtimeType != BatteryFactor) {
       return;
     }
 
@@ -112,7 +140,7 @@ class BatteryFactor implements ContextFactor {
       });
 
       // Set up a timer to periodically check battery level
-      _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      _timer = Timer.periodic(updateInterval, (_) {
         _updateBatteryLevel();
       });
 
@@ -120,7 +148,7 @@ class BatteryFactor implements ContextFactor {
     } catch (e) {
       // If any step fails, mark as unsupported and use fallback
       _isSupported = false;
-      throw e;
+      rethrow;
     }
   }
 

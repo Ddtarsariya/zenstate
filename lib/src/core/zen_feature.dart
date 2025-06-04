@@ -1,6 +1,18 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../../zenstate.dart'; // Ensure this imports your updated Command, FunctionCommand, SimpleFunctionCommand, DebugLogger, Store, Atom, Derived, ZenFuture, ZenStream, SmartAtom, StateOptimizer, ContextFactor classes
+import 'package:pub_semver/pub_semver.dart';
+
+// Import specific files instead of the entire package
+import 'store.dart';
+import 'atom.dart';
+import 'derived.dart';
+import 'command.dart';
+import 'smart_atom.dart';
+import 'optimization/state_optimizer.dart';
+import 'context/context_factor.dart';
+import '../async/zen_future.dart';
+import '../async/zen_stream.dart';
+import '../devtools/debug_logger.dart';
 
 /// Status of a feature module.
 enum FeatureStatus {
@@ -123,19 +135,6 @@ enum FeatureStatus {
 ///     print('AuthFeature disposed');
 ///   }
 /// }
-///
-/// // --- Placeholder classes for the example (replace with your actual classes) ---
-/// class LoginPayload {
-///   final String username;
-///   final String password;
-///   LoginPayload(this.username, this.password);
-/// }
-/// class User {
-///   final String name;
-///   User([this.name = 'Guest']);
-///   static User guest() => User('Guest');
-/// }
-/// // --- End Placeholder classes ---
 /// ```
 abstract class ZenFeature {
   /// The name of the feature.
@@ -173,7 +172,6 @@ abstract class ZenFeature {
   final Map<String, Derived> _derived = {};
 
   /// The commands registered with this feature.
-  /// Changed from `dynamic` to `Command<dynamic, dynamic>` for better type safety.
   final Map<String, Command<dynamic, dynamic>> _commands = {};
 
   /// The ZenFuture instances registered with this feature.
@@ -233,6 +231,14 @@ abstract class ZenFeature {
     }
   }
 
+  /// Restores the state of this feature from persistence.
+  ///
+  /// This method is called during initialization after dependencies are initialized.
+  /// Override this method to restore state from persistence.
+  Future<void> restoreState() async {
+    // No-op by default
+  }
+
   /// Initializes the feature.
   ///
   /// This method should be called before using the feature.
@@ -263,6 +269,9 @@ abstract class ZenFeature {
 
       // Setup hydration
       setupHydration();
+
+      // Restore state
+      await restoreState();
 
       _status = FeatureStatus.initialized;
       _initializeCompleter.complete();
@@ -298,6 +307,12 @@ abstract class ZenFeature {
   /// The version constraint should be in the format of a semver range.
   /// For example: '^1.0.0', '>=2.0.0 <3.0.0', etc.
   void dependsOn(ZenFeature feature, {String? versionConstraint}) {
+    if (_status != FeatureStatus.uninitialized) {
+      throw StateError(
+        'Cannot add dependencies after initialization has started',
+      );
+    }
+
     // Check for circular dependencies
     if (_wouldCreateCycle(feature)) {
       throw StateError(
@@ -353,29 +368,6 @@ abstract class ZenFeature {
       return false;
     }
 
-    // To check if adding 'feature' creates a cycle, we temporarily consider it
-    // a dependency of 'this' and then run the cycle detection starting from 'feature'.
-    // If 'feature' already has a dependency that leads back to 'this', that's a cycle.
-    // A more robust cycle detection needs to consider the entire graph, not just a single path.
-    // For simplicity, we check if the new dependency already exists in the recursion stack
-    // if 'this' is part of the dependency chain of 'feature'.
-
-    // This simplified check focuses on direct cycles. For a comprehensive graph cycle detection,
-    // you might need a more advanced algorithm (e.g., Tarjan's or Kosaraju's algorithm).
-    // For now, let's just check if 'feature' itself has 'this' as a dependency in its transitive closure.
-    // This is a common and usually sufficient check for simple dependency graphs.
-
-    // Simulate adding the dependency to check for a cycle
-    // We add 'feature' to a temporary dependency list to test the cycle.
-    // This requires a more complex `_findCycle` logic.
-    // For now, let's keep the existing logic that checks if the proposed new feature
-    // itself has a dependency that would point back to the current feature or an
-    // ancestor.
-
-    // A simpler and often sufficient check for a cycle in `dependsOn` is to traverse
-    // the dependency graph from the `feature` being added and see if `this` (`ZenFeature` instance)
-    // is ever encountered.
-
     // Perform a depth-first search starting from 'feature' to see if 'this' is reachable.
     final tempVisited = <String>{};
     bool isReachable(ZenFeature startNode, ZenFeature targetNode) {
@@ -395,52 +387,62 @@ abstract class ZenFeature {
 
   /// Checks if a version satisfies a version constraint.
   ///
-  /// This is a basic implementation and does not fully support all semver ranges.
-  /// For robust semver, consider using a package like `pub_semver`.
+  /// Uses the pub_semver package for robust semver support.
   bool _isVersionCompatible(String version, String constraint) {
-    if (constraint.isEmpty)
-      return true; // No constraint means any version is compatible
-
-    // Basic handling for '^' (caret) operator: compatible with minor/patch updates
-    if (constraint.startsWith('^')) {
-      final constraintWithoutCaret = constraint.substring(1);
-      final constraintParts =
-          constraintWithoutCaret.split('.').map(int.tryParse).toList();
-      final versionParts = version.split('.').map(int.tryParse).toList();
-
-      if (constraintParts.length < 1 || versionParts.length < 1) return false;
-
-      final cMajor = constraintParts[0] ?? -1;
-      final vMajor = versionParts[0] ?? -1;
-
-      if (cMajor != vMajor) return false; // Major versions must match for '^'
-
-      if (cMajor == 0) {
-        // Special case for 0.x.y (only patch updates are compatible)
-        if (constraintParts.length < 2 || versionParts.length < 2) return false;
-        final cMinor = constraintParts[1] ?? -1;
-        final vMinor = versionParts[1] ?? -1;
-        if (cMinor != vMinor) return false;
-        // All subsequent parts must be greater or equal
-        for (int i = 2; i < constraintParts.length; i++) {
-          final cPart = constraintParts[i] ?? -1;
-          final vPart = versionParts.length > i ? (versionParts[i] ?? -1) : 0;
-          if (vPart < cPart) return false;
-        }
-      } else {
-        // For 1.x.y, 2.x.y etc. (minor and patch updates are compatible)
-        for (int i = 0; i < constraintParts.length; i++) {
-          final cPart = constraintParts[i] ?? -1;
-          final vPart = versionParts.length > i ? (versionParts[i] ?? -1) : 0;
-          if (vPart < cPart)
-            return false; // Version must be at least the constraint
-        }
+    try {
+      final versionObj = Version.parse(version);
+      final constraintObj = VersionConstraint.parse(constraint);
+      return constraintObj.allows(versionObj);
+    } catch (e) {
+      // Fallback to basic check if parsing fails
+      if (constraint.isEmpty) {
+        return true; // No constraint means any version is compatible
       }
-      return true;
-    }
 
-    // Basic exact match for now
-    return version == constraint;
+      // Basic handling for '^' (caret) operator
+      if (constraint.startsWith('^')) {
+        final constraintWithoutCaret = constraint.substring(1);
+        final constraintParts =
+            constraintWithoutCaret.split('.').map(int.tryParse).toList();
+        final versionParts = version.split('.').map(int.tryParse).toList();
+
+        if (constraintParts.length < 1 || versionParts.length < 1) return false;
+
+        final cMajor = constraintParts[0] ?? -1;
+        final vMajor = versionParts[0] ?? -1;
+
+        if (cMajor != vMajor) return false; // Major versions must match for '^'
+
+        if (cMajor == 0) {
+          // Special case for 0.x.y (only patch updates are compatible)
+          if (constraintParts.length < 2 || versionParts.length < 2) {
+            return false;
+          }
+          final cMinor = constraintParts[1] ?? -1;
+          final vMinor = versionParts[1] ?? -1;
+          if (cMinor != vMinor) return false;
+          // All subsequent parts must be greater or equal
+          for (int i = 2; i < constraintParts.length; i++) {
+            final cPart = constraintParts[i] ?? -1;
+            final vPart = versionParts.length > i ? (versionParts[i] ?? -1) : 0;
+            if (vPart < cPart) return false;
+          }
+        } else {
+          // For 1.x.y, 2.x.y etc. (minor and patch updates are compatible)
+          for (int i = 0; i < constraintParts.length; i++) {
+            final cPart = constraintParts[i] ?? -1;
+            final vPart = versionParts.length > i ? (versionParts[i] ?? -1) : 0;
+            if (vPart < cPart) {
+              return false; // Version must be at least the constraint
+            }
+          }
+        }
+        return true;
+      }
+
+      // Basic exact match as fallback
+      return version == constraint;
+    }
   }
 
   /// Registers an atom with this feature.
@@ -449,6 +451,10 @@ abstract class ZenFeature {
   /// late final counterAtom = registerAtom('counter', 0);
   /// ```
   Atom<T> registerAtom<T>(String key, T initialValue, {String? category}) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register atom on disposed feature');
+    }
+
     final atom = _store.createAtom<T>(key, initialValue, category: category);
     _atoms[key] = atom;
 
@@ -466,6 +472,10 @@ abstract class ZenFeature {
   /// ```
   Derived<T> registerDerived<T>(String key, T Function() compute,
       {String? category}) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register derived on disposed feature');
+    }
+
     final derived = _store.createDerived<T>(key, compute, category: category);
     _derived[key] = derived;
 
@@ -501,6 +511,18 @@ abstract class ZenFeature {
   /// ```
   Command<TPayload, TResult> registerCommand<TPayload, TResult>(
       String key, Command<TPayload, TResult> command) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register command on disposed feature');
+    }
+
+    // Runtime type check (limited but better than nothing)
+    if (command is! Command<TPayload, TResult>) {
+      throw ArgumentError(
+        'Command type mismatch: expected Command<$TPayload, $TResult>, '
+        'got ${command.runtimeType}',
+      );
+    }
+
     _commands[key] = command;
 
     if (DebugLogger.isEnabled) {
@@ -541,6 +563,10 @@ abstract class ZenFeature {
     bool canUndo = true,
     bool addToHistory = true,
   }) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register function command on disposed feature');
+    }
+
     final command = FunctionCommand.payload(
       execute,
       name: commandName ?? '$name.$key',
@@ -568,22 +594,6 @@ abstract class ZenFeature {
   ///   name: 'LogoutUserAction', // Optional custom name
   /// );
   /// ```
-  /// Registers a simple functional command with no payload.
-  ///
-  /// This is a convenience method for commands that perform an action
-  /// without requiring any input arguments (i.e., payload is `void`).
-  ///
-  /// ```dart
-  /// late final logoutCmd = registerSimpleCommand<void>(
-  ///   'logout',
-  ///   () {
-  ///     // Clear session, etc.
-  ///   },
-  ///   canUndo: false, // Logout might not always be undoable
-  ///   name: 'LogoutUserAction', // Optional custom name
-  /// );
-  /// ```
-// Corrected SimpleFunctionCommand registration
   FunctionCommand<void, TResult> registerSimpleCommand<TResult>(
     String key,
     FutureOr<TResult> Function() execute, {
@@ -593,8 +603,11 @@ abstract class ZenFeature {
     bool canUndo = true,
     bool addToHistory = true,
   }) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register simple command on disposed feature');
+    }
+
     final command = FunctionCommand.simple(
-      // TPayload is void here implicitly
       execute,
       name: commandName ?? '$name.$key',
       undo: undo,
@@ -602,8 +615,7 @@ abstract class ZenFeature {
       canUndo: canUndo,
       addToHistory: addToHistory,
     );
-    registerCommand<void, TResult>(
-        key, command); // Explicitly void for registerCommand
+    registerCommand<void, TResult>(key, command);
     return command;
   }
 
@@ -613,6 +625,10 @@ abstract class ZenFeature {
   /// late final userFuture = registerFuture<User>('user');
   /// ```
   ZenFuture<T> registerFuture<T>(String key) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register future on disposed feature');
+    }
+
     final future = ZenFuture<T>(name: '$name.$key');
     _futures[key] = future;
 
@@ -626,9 +642,12 @@ abstract class ZenFeature {
   /// Registers a ZenStream with this feature.
   ///
   /// ```dart
-  /// late final messagesStream = registerStream<List<Message>>('messages');
-  /// ```
+  /// late final messagesStream = registerStream<List<Message>>('messages'); /// ```
   ZenStream<T> registerStream<T>(String key) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register stream on disposed feature');
+    }
+
     final stream = ZenStream<T>(name: '$name.$key');
     _streams[key] = stream;
 
@@ -643,10 +662,10 @@ abstract class ZenFeature {
   ///
   /// ```dart
   /// late final counterAtom = registerSmartAtom(
-  ///   'counter',
-  ///   0,
-  ///   optimizer: DebouncingOptimizer(duration: Duration(milliseconds: 300)),
-  ///   contextFactors: [BatteryFactor(), NetworkFactor()],
+  ///   'counter',
+  ///   0,
+  ///   optimizer: DebouncingOptimizer(duration: Duration(milliseconds: 300)),
+  ///   contextFactors: [BatteryFactor(), NetworkFactor()],
   /// );
   /// ```
   SmartAtom<T> registerSmartAtom<T>(
@@ -660,10 +679,14 @@ abstract class ZenFeature {
     String Function(T)? serializer,
     T Function(String)? deserializer,
   }) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot register smart atom on disposed feature');
+    }
+
     // Create the smart atom with the given parameters
     final smartAtom = SmartAtom<T>(
-      name: '$name.$key',
       initialValue: initialValue,
+      name: '$name.$key',
       optimizer: optimizer,
       contextFactors: contextFactors,
       historyLimit: historyLimit,
@@ -703,12 +726,28 @@ abstract class ZenFeature {
 
   /// Gets an atom by key.
   Atom<T> getAtom<T>(String key) {
-    return _store.getAtom<T>(key);
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot get atom from disposed feature');
+    }
+
+    final atom = _store.getAtom<T>(key);
+    if (atom == null) {
+      throw StateError('No atom found with key: $key in feature $name');
+    }
+    return atom;
   }
 
   /// Gets a derived value by key.
   Derived<T> getDerived<T>(String key) {
-    return _store.getDerived<T>(key);
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot get derived from disposed feature');
+    }
+
+    final derived = _store.getDerived<T>(key);
+    if (derived == null) {
+      throw StateError('No derived found with key: $key in feature $name');
+    }
+    return derived;
   }
 
   /// Gets a command by key.
@@ -721,24 +760,33 @@ abstract class ZenFeature {
   /// await loginCmd(LoginPayload('user', 'pass'));
   /// ```
   Command<TPayload, TResult> getCommand<TPayload, TResult>(String key) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot get command from disposed feature');
+    }
+
     final command = _commands[key];
     if (command == null) {
-      throw StateError('No command found with key: $key in feature ${name}.');
+      throw StateError('No command found with key: $key in feature $name');
     }
+
     // Safely cast to the expected Command type with its specific generics
     if (command is! Command<TPayload, TResult>) {
       throw StateError(
-          'Command with key "$key" in feature "${name}" is not of expected type '
-          'Command<$TPayload, $TResult>. Actual type: ${command.runtimeType}.');
+          'Command with key "$key" in feature "$name" is not of expected type '
+          'Command<$TPayload, $TResult>. Actual type: ${command.runtimeType}');
     }
     return command;
   }
 
   /// Gets a ZenFuture by key.
   ZenFuture<T> getFuture<T>(String key) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot get future from disposed feature');
+    }
+
     final future = _futures[key];
     if (future == null) {
-      throw StateError('No future found with key: $key');
+      throw StateError('No future found with key: $key in feature $name');
     }
     if (future is! ZenFuture<T>) {
       throw StateError('Future with key $key is not of type ZenFuture<$T>');
@@ -748,9 +796,13 @@ abstract class ZenFeature {
 
   /// Gets a ZenStream by key.
   ZenStream<T> getStream<T>(String key) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot get stream from disposed feature');
+    }
+
     final stream = _streams[key];
     if (stream == null) {
-      throw StateError('No stream found with key: $key');
+      throw StateError('No stream found with key: $key in feature $name');
     }
     if (stream is! ZenStream<T>) {
       throw StateError('Stream with key $key is not of type ZenStream<$T>');
@@ -763,27 +815,60 @@ abstract class ZenFeature {
   /// This is more efficient than updating atoms individually as it
   /// will only trigger one rebuild cycle.
   void batchUpdate(void Function() updates) {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot perform batch update on disposed feature');
+    }
+
     _store.batchUpdate(updates);
   }
 
   /// Gets the store that contains the feature's state.
-  Store get store => _store;
+  Store get store {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot access store of disposed feature');
+    }
+    return _store;
+  }
 
   /// Gets all atoms registered with this feature.
-  Map<String, Atom> get atoms => Map.unmodifiable(_atoms);
+  Map<String, Atom> get atoms {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot access atoms of disposed feature');
+    }
+    return Map.unmodifiable(_atoms);
+  }
 
   /// Gets all derived values registered with this feature.
-  Map<String, Derived> get derived => Map.unmodifiable(_derived);
+  Map<String, Derived> get derived {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot access derived values of disposed feature');
+    }
+    return Map.unmodifiable(_derived);
+  }
 
   /// Gets all commands registered with this feature.
-  Map<String, Command<dynamic, dynamic>> get commands =>
-      Map.unmodifiable(_commands);
+  Map<String, Command<dynamic, dynamic>> get commands {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot access commands of disposed feature');
+    }
+    return Map.unmodifiable(_commands);
+  }
 
   /// Gets all ZenFuture instances registered with this feature.
-  Map<String, ZenFuture> get futures => Map.unmodifiable(_futures);
+  Map<String, ZenFuture> get futures {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot access futures of disposed feature');
+    }
+    return Map.unmodifiable(_futures);
+  }
 
   /// Gets all ZenStream instances registered with this feature.
-  Map<String, ZenStream> get streams => Map.unmodifiable(_streams);
+  Map<String, ZenStream> get streams {
+    if (_status == FeatureStatus.disposed) {
+      throw StateError('Cannot access streams of disposed feature');
+    }
+    return Map.unmodifiable(_streams);
+  }
 
   /// Disposes the feature and all its registered state.
   ///

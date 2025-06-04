@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'zen_feature.dart';
 import '../devtools/debug_logger.dart';
 
@@ -13,11 +14,20 @@ class ZenFeatureManager {
   /// Private constructor for singleton pattern.
   ZenFeatureManager._();
 
+  /// Creates a new instance of ZenFeatureManager for testing.
+  @visibleForTesting
+  factory ZenFeatureManager.forTesting() {
+    return ZenFeatureManager._();
+  }
+
   /// The registered features.
   final Map<String, ZenFeature> _features = {};
 
   /// Whether the manager has been initialized.
   bool _initialized = false;
+
+  /// Whether the manager is currently initializing.
+  bool _initializing = false;
 
   /// A completer that resolves when all features are initialized.
   final Completer<void> _initializeCompleter = Completer<void>();
@@ -70,6 +80,11 @@ class ZenFeatureManager {
 
   /// Registers a feature with the manager.
   void registerFeature(ZenFeature feature) {
+    if (_initialized || _initializing) {
+      throw StateError(
+          'Cannot register features after initialization has started');
+    }
+
     if (_features.containsKey(feature.name)) {
       throw StateError('Feature already registered: ${feature.name}');
     }
@@ -97,6 +112,12 @@ class ZenFeatureManager {
       return initialized;
     }
 
+    if (_initializing) {
+      return initialized;
+    }
+
+    _initializing = true;
+
     if (DebugLogger.isEnabled) {
       DebugLogger.instance
           .logAction('Initializing features: ${_features.keys.join(', ')}');
@@ -109,12 +130,14 @@ class ZenFeatureManager {
       }
 
       _initialized = true;
+      _initializing = false;
       _initializeCompleter.complete();
 
       if (DebugLogger.isEnabled) {
         DebugLogger.instance.logAction('All features initialized');
       }
     } catch (e, stackTrace) {
+      _initializing = false;
       _initializeCompleter.completeError(e, stackTrace);
 
       if (DebugLogger.isEnabled) {
@@ -213,7 +236,6 @@ class ZenFeatureManager {
   }
 
   /// Disposes all registered features in reverse initialization order.
-  @override
   Future<void> dispose() async {
     if (DebugLogger.isEnabled) {
       DebugLogger.instance.logAction('Disposing all features');

@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:zenstate/src/core/optimization/default_optimizer.dart';
+
 import '../persistence/atom_persistence.dart';
 import 'atom.dart';
 import 'optimization/state_optimizer.dart';

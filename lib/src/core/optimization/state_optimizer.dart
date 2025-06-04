@@ -23,29 +23,3 @@ abstract class StateOptimizer<T> {
   /// It gives the optimizer a chance to release any resources it may be holding.
   void dispose() {}
 }
-
-/// Default optimizer that applies no optimizations
-class DefaultOptimizer<T> implements StateOptimizer<T> {
-  const DefaultOptimizer();
-
-  @override
-  T? optimize(T proposedValue, List<StateTransition<T>> history) {
-    try {
-      // Default optimizer simply returns the proposed value without any optimization
-      return proposedValue;
-    } catch (e, stackTrace) {
-      throw StateError('Failed to optimize state: $e');
-    }
-  }
-
-  @override
-  StateOptimizer<T> withContextFactors(Map<String, double> contextFactors) {
-    // Default optimizer ignores context factors and returns itself
-    return this;
-  }
-
-  @override
-  void dispose() {
-    // No resources to clean up in default optimizer
-  }
-}
