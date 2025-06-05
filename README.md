@@ -9,7 +9,7 @@
 [![Dart](https://img.shields.io/badge/Dart-3.0+-blue.svg)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-blue.svg)](https://flutter.dev)
 
-<img src="https://raw.githubusercontent.com/Ddtarsariya/zenstate/main/assets/logo.png" alt="ZenState Logo" width="200"/>
+<img src="https://raw.githubusercontent.com/Ddtarsariya/zenstate/master/assets/logo.png" alt="ZenState Logo" width="200"/>
 
 *A state of perfect peace and harmony in your Flutter applications*
 
@@ -21,7 +21,7 @@ ZenState is a revolutionary state management solution for Flutter that brings ha
 
 <div align="center">
 
-![ZenState Demo]("https://raw.githubusercontent.com/Ddtarsariya/zenstate/main/assets/banner.png)
+![ZenState Demo]("https://raw.githubusercontent.com/Ddtarsariya/zenstate/master/assets/banner.png)
 
 </div>
 
