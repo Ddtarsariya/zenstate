@@ -21,7 +21,7 @@ ZenState is a revolutionary state management solution for Flutter that brings ha
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/Ddtarsariya/zenstate/master/assets/banner" alt="ZenState Logo" width="200"/>
+<img src="https://raw.githubusercontent.com/Ddtarsariya/zenstate/master/assets/banner.png" alt="ZenState Logo" width="200"/>
 
 </div>
 
