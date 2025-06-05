@@ -9,7 +9,7 @@
 [![Dart](https://img.shields.io/badge/Dart-3.0+-blue.svg)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-blue.svg)](https://flutter.dev)
 
-<img src="https://raw.githubusercontent.com/Ddtarsariya/zenstate/main/assets/zenstate_logo.png" alt="ZenState Logo" width="200"/>
+<img src="https://srv787-files.hstgr.io/2dd1f6f9bedc1172/api/preview/big/public_html/logo.png" alt="ZenState Logo" width="200"/>
 
 *A state of perfect peace and harmony in your Flutter applications*
 
@@ -21,7 +21,7 @@ ZenState is a revolutionary state management solution for Flutter that brings ha
 
 <div align="center">
 
-![ZenState Demo](https://raw.githubusercontent.com/yourusername/zenstate/main/assets/zenstate_demo.gif)
+![ZenState Demo](https://srv787-files.hstgr.io/2dd1f6f9bedc1172/api/preview/big/public_html/banner.png)
 
 </div>
 
@@ -70,7 +70,7 @@ dependencies:
 ```dart
 void main() {
   runApp(
-    ZenStateProvider(
+    ZenStateRoot(
       child: MyApp(),
     ),
   );
@@ -117,16 +117,16 @@ class UserStore extends Store {
 
 ## 📚 Documentation
 
-Visit our comprehensive [documentation site](https://zenstate.dev) for detailed guides and API references.
+Visit our comprehensive [documentation site](https://zenstate.org) for detailed guides and API references.
 
 ### Key Concepts
 
-- [📖 Atoms](https://zenstate.dev/docs/atoms) - The building blocks of state
-- [🔄 Derived State](https://zenstate.dev/docs/derived) - Computed values
-- [🏗️ Stores](https://zenstate.dev/docs/stores) - State organization
-- [📦 Features](https://zenstate.dev/docs/features) - Modular state
-- [💾 Persistence](https://zenstate.dev/docs/persistence) - State storage
-- [🔧 DevTools](https://zenstate.dev/docs/devtools) - Debugging tools
+- [📖 Atoms](https://zenstate.org/docs) - The building blocks of state
+- [🔄 Derived State](https://zenstate.org/docs) - Computed values
+- [🏗️ Stores](https://zenstate.org/docs) - State organization
+- [📦 Features](https://zenstate.org/docs) - Modular state
+- [💾 Persistence](https://zenstate.org/docs) - State storage
+- [🔧 DevTools](https://zenstate.org/docs) - Debugging tools
 
 ## 🎯 Why Choose ZenState?
 
