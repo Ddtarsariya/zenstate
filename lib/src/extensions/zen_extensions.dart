@@ -1,5 +1,3 @@
-// lib/src/extensions/zen_extensions.dart
-
 import 'package:flutter/widgets.dart';
 import '../core/atom.dart';
 import '../core/derived.dart';
@@ -375,7 +373,6 @@ class _AtomBuilder<T> extends StatefulWidget {
 }
 
 class _AtomBuilderState<T> extends State<_AtomBuilder<T>> {
-  // Modified/New Code
   late T _currentValue;
 
   @override
@@ -402,7 +399,6 @@ class _AtomBuilderState<T> extends State<_AtomBuilder<T>> {
   }
 
   void _handleChange() {
-    // Modified/New Code
     final newValue = widget.atom.value;
     if (_currentValue != newValue) {
       setState(() {
@@ -413,7 +409,6 @@ class _AtomBuilderState<T> extends State<_AtomBuilder<T>> {
 
   @override
   Widget build(BuildContext context) {
-    // Modified/New Code
     return widget.builder(context, _currentValue);
   }
 }

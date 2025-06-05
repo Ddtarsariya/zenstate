@@ -1,5 +1,3 @@
-// lib/src/persistence/hydration_manager.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -78,6 +76,19 @@ class HydrationManager {
   /// Migration function for version updates
   Future<void> Function(String oldVersion, String newVersion)?
       _migrationFunction;
+
+  /// Cache for loaded values to prevent redundant storage reads
+  final Map<String, String> _valueCache = {};
+
+  /// Queue for batched operations
+  final List<_HydrationOperation> _operationQueue = [];
+  Timer? _batchTimer;
+
+  /// Maximum batch size for operations
+  static const int _maxBatchSize = 50;
+
+  /// Batch delay in milliseconds
+  static const int _batchDelay = 100;
 
   /// Initializes the hydration manager with the given persistence provider.
   void init(PersistenceProvider provider) {
@@ -320,6 +331,199 @@ class HydrationManager {
   bool get isAllHydrated {
     return _hydrationStatus.values.every((status) => status);
   }
+
+  /// Adds an operation to the batch queue
+  void _queueOperation(_HydrationOperation operation) {
+    _operationQueue.add(operation);
+    _scheduleBatch();
+  }
+
+  /// Schedules a batch operation
+  void _scheduleBatch() {
+    _batchTimer?.cancel();
+    _batchTimer = Timer(Duration(milliseconds: _batchDelay), _processBatch);
+  }
+
+  /// Processes the batch queue
+  Future<void> _processBatch() async {
+    if (_operationQueue.isEmpty) return;
+
+    final operations = List<_HydrationOperation>.from(_operationQueue);
+    _operationQueue.clear();
+
+    // Group operations by type for better performance
+    final saves =
+        operations.where((op) => op.type == _OperationType.save).toList();
+    final loads =
+        operations.where((op) => op.type == _OperationType.load).toList();
+    final removes =
+        operations.where((op) => op.type == _OperationType.remove).toList();
+
+    // Process operations in parallel where possible
+    await Future.wait([
+      _processSaves(saves),
+      _processLoads(loads),
+      _processRemoves(removes),
+    ]);
+  }
+
+  /// Processes save operations
+  Future<void> _processSaves(List<_HydrationOperation> operations) async {
+    if (operations.isEmpty) return;
+
+    // Group by provider for better performance
+    final byProvider = <PersistenceProvider, List<_HydrationOperation>>{};
+    for (final op in operations) {
+      byProvider.putIfAbsent(op.provider, () => []).add(op);
+    }
+
+    // Process each provider's operations
+    await Future.wait(
+      byProvider.entries.map((entry) async {
+        final provider = entry.key;
+        final ops = entry.value;
+
+        // Batch save operations
+        final batch = <String, String>{};
+        for (final op in ops) {
+          batch[op.key] = op.value!;
+          _valueCache[op.key] = op.value!;
+        }
+
+        try {
+          await provider.saveBatch(batch);
+        } catch (e, stackTrace) {
+          ZenLogger.instance.error(
+            'Error in batch save operation',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+      }),
+    );
+  }
+
+  /// Processes load operations
+  Future<void> _processLoads(List<_HydrationOperation> operations) async {
+    if (operations.isEmpty) return;
+
+    // Group by provider for better performance
+    final byProvider = <PersistenceProvider, List<_HydrationOperation>>{};
+    for (final op in operations) {
+      byProvider.putIfAbsent(op.provider, () => []).add(op);
+    }
+
+    // Process each provider's operations
+    await Future.wait(
+      byProvider.entries.map((entry) async {
+        final provider = entry.key;
+        final ops = entry.value;
+
+        // Get keys that aren't in cache
+        final keysToLoad = ops
+            .where((op) => !_valueCache.containsKey(op.key))
+            .map((op) => op.key)
+            .toList();
+
+        if (keysToLoad.isEmpty) return;
+
+        try {
+          // Batch load operations
+          final values = await provider.loadBatch(keysToLoad);
+          _valueCache.addAll(values);
+
+          // Update atoms with loaded values
+          for (final op in ops) {
+            final value = _valueCache[op.key];
+            if (value != null) {
+              final atom = _atoms[op.key];
+              if (atom != null) {
+                try {
+                  final deserializer = _deserializers[op.key];
+                  if (deserializer != null) {
+                    (atom as dynamic).value = deserializer(value);
+                  }
+                } catch (e, stackTrace) {
+                  ZenLogger.instance.error(
+                    'Error deserializing value for ${op.key}',
+                    error: e,
+                    stackTrace: stackTrace,
+                  );
+                }
+              }
+            }
+          }
+        } catch (e, stackTrace) {
+          ZenLogger.instance.error(
+            'Error in batch load operation',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+      }),
+    );
+  }
+
+  /// Processes remove operations
+  Future<void> _processRemoves(List<_HydrationOperation> operations) async {
+    if (operations.isEmpty) return;
+
+    // Group by provider for better performance
+    final byProvider = <PersistenceProvider, List<_HydrationOperation>>{};
+    for (final op in operations) {
+      byProvider.putIfAbsent(op.provider, () => []).add(op);
+    }
+
+    // Process each provider's operations
+    await Future.wait(
+      byProvider.entries.map((entry) async {
+        final provider = entry.key;
+        final ops = entry.value;
+
+        try {
+          // Batch remove operations
+          await provider.removeBatch(ops.map((op) => op.key).toList());
+          for (final op in ops) {
+            _valueCache.remove(op.key);
+          }
+        } catch (e, stackTrace) {
+          ZenLogger.instance.error(
+            'Error in batch remove operation',
+            error: e,
+            stackTrace: stackTrace,
+          );
+        }
+      }),
+    );
+  }
+
+  void dispose() {
+    _batchTimer?.cancel();
+    _valueCache.clear();
+    _operationQueue.clear();
+  }
+}
+
+/// Type of hydration operation
+enum _OperationType {
+  save,
+  load,
+  remove,
+}
+
+/// A hydration operation
+class _HydrationOperation {
+  final _OperationType type;
+  final String key;
+  final String? value;
+  final PersistenceProvider provider;
+
+  _HydrationOperation({
+    required this.type,
+    required this.key,
+    this.value,
+    required this.provider,
+  });
 }
 
 /// A widget that hydrates atoms when the app starts.

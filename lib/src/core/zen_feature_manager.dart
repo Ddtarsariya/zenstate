@@ -1,6 +1,5 @@
-// lib/src/core/zen_feature_manager.dart
-
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'zen_feature.dart';
 import '../devtools/debug_logger.dart';
 
@@ -15,11 +14,20 @@ class ZenFeatureManager {
   /// Private constructor for singleton pattern.
   ZenFeatureManager._();
 
+  /// Creates a new instance of ZenFeatureManager for testing.
+  @visibleForTesting
+  factory ZenFeatureManager.forTesting() {
+    return ZenFeatureManager._();
+  }
+
   /// The registered features.
   final Map<String, ZenFeature> _features = {};
 
   /// Whether the manager has been initialized.
   bool _initialized = false;
+
+  /// Whether the manager is currently initializing.
+  bool _initializing = false;
 
   /// A completer that resolves when all features are initialized.
   final Completer<void> _initializeCompleter = Completer<void>();
@@ -30,8 +38,53 @@ class ZenFeatureManager {
   /// A cache of features by type for faster lookups.
   final Map<Type, ZenFeature> _featureTypeCache = {};
 
+  /// The initialization order of features based on dependencies.
+  List<ZenFeature>? _initializationOrder;
+
+  /// Gets the initialization order of features.
+  List<ZenFeature> get initializationOrder {
+    _initializationOrder ??= _calculateInitializationOrder();
+    return _initializationOrder!;
+  }
+
+  /// Calculates the initialization order based on dependencies.
+  List<ZenFeature> _calculateInitializationOrder() {
+    final visited = <String>{};
+    final temp = <String>{};
+    final order = <ZenFeature>[];
+
+    void visit(String name) {
+      if (temp.contains(name)) {
+        throw StateError('Circular dependency detected: $name');
+      }
+      if (visited.contains(name)) return;
+
+      temp.add(name);
+      final feature = _features[name]!;
+      for (final dependency in feature.dependencies) {
+        visit(dependency.name);
+      }
+      temp.remove(name);
+      visited.add(name);
+      order.add(feature);
+    }
+
+    for (final feature in _features.values) {
+      if (!visited.contains(feature.name)) {
+        visit(feature.name);
+      }
+    }
+
+    return order;
+  }
+
   /// Registers a feature with the manager.
   void registerFeature(ZenFeature feature) {
+    if (_initialized || _initializing) {
+      throw StateError(
+          'Cannot register features after initialization has started');
+    }
+
     if (_features.containsKey(feature.name)) {
       throw StateError('Feature already registered: ${feature.name}');
     }
@@ -53,13 +106,17 @@ class ZenFeatureManager {
     }
   }
 
-  /// Initializes all registered features.
-  ///
-  /// This method should be called before using any features.
+  /// Initializes all registered features in the correct order.
   Future<void> initialize() async {
     if (_initialized) {
       return initialized;
     }
+
+    if (_initializing) {
+      return initialized;
+    }
+
+    _initializing = true;
 
     if (DebugLogger.isEnabled) {
       DebugLogger.instance
@@ -67,17 +124,20 @@ class ZenFeatureManager {
     }
 
     try {
-      // Initialize all features
-      await Future.wait(
-          _features.values.map((feature) => feature.initialize()));
+      // Initialize features in the correct order
+      for (final feature in initializationOrder) {
+        await feature.initialize();
+      }
 
       _initialized = true;
+      _initializing = false;
       _initializeCompleter.complete();
 
       if (DebugLogger.isEnabled) {
         DebugLogger.instance.logAction('All features initialized');
       }
     } catch (e, stackTrace) {
+      _initializing = false;
       _initializeCompleter.completeError(e, stackTrace);
 
       if (DebugLogger.isEnabled) {
@@ -157,19 +217,38 @@ class ZenFeatureManager {
   /// Gets all registered features.
   Map<String, ZenFeature> get features => Map.unmodifiable(_features);
 
-  /// Disposes all registered features.
-  void dispose() {
+  /// Pauses all features.
+  Future<void> pauseAll() async {
+    if (!_initialized) return;
+
+    for (final feature in _features.values) {
+      await feature.pause();
+    }
+  }
+
+  /// Resumes all features.
+  Future<void> resumeAll() async {
+    if (!_initialized) return;
+
+    for (final feature in _features.values) {
+      await feature.resume();
+    }
+  }
+
+  /// Disposes all registered features in reverse initialization order.
+  Future<void> dispose() async {
     if (DebugLogger.isEnabled) {
       DebugLogger.instance.logAction('Disposing all features');
     }
 
-    for (final feature in _features.values) {
-      feature.dispose();
+    // Dispose features in reverse initialization order
+    for (final feature in initializationOrder.reversed) {
+      await feature.dispose();
     }
 
     _features.clear();
     _featureTypeCache.clear();
-
+    _initializationOrder = null;
     _initialized = false;
 
     if (DebugLogger.isEnabled) {

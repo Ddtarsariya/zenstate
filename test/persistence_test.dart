@@ -1,10 +1,8 @@
-// test/persistence_test.dart
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zenstate/zenstate.dart';
 
 // Mock persistence provider for testing
-class MockPersistenceProvider implements PersistenceProvider {
+class MockPersistenceProvider with PersistenceProvider {
   final Map<String, String> _storage = {};
 
   @override

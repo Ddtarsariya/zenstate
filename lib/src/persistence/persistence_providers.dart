@@ -1,5 +1,3 @@
-// lib/src/persistence/persistence_providers.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -31,7 +29,7 @@ Future<void> setupPersistence() async {
 
   try {
     // Try to retrieve existing keys from secure storage
-    final secureStorage = FlutterSecureStorage();
+    const secureStorage = FlutterSecureStorage();
     final storedKey = await secureStorage.read(key: 'zenstate_encryption_key');
     final storedIV = await secureStorage.read(key: 'zenstate_encryption_iv');
 
@@ -201,6 +199,141 @@ class SharedPreferencesPersistenceProvider implements PersistenceProvider {
       rethrow;
     }
   }
+
+  @override
+  Future<void> saveBatch(Map<String, String> values) async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      await Future.wait(
+        values.entries.map((entry) => prefs.setString(entry.key, entry.value)),
+      );
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error saving batch to SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> loadBatch(List<String> keys) async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      final results = <String, String>{};
+      for (final key in keys) {
+        final value = await prefs.getString(key);
+        if (value != null) {
+          results[key] = value;
+        }
+      }
+      return results;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error loading batch from SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> removeBatch(List<String> keys) async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      await Future.wait(keys.map((key) => prefs.remove(key)));
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error removing batch from SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<String>> keys() async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      return prefs.getKeys().toList();
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error getting keys from SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<int> size() async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      final allKeys = prefs.getKeys();
+      int totalSize = 0;
+      for (final key in allKeys) {
+        final value = prefs.getString(key);
+        if (value != null) {
+          totalSize += key.length + value.length;
+        }
+      }
+      return totalSize;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error calculating size of SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> exists(String key) async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      return prefs.containsKey(key);
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error checking existence in SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> getAll() async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      final allKeys = prefs.getKeys();
+      final values = <String, String>{};
+      for (final key in allKeys) {
+        final value = prefs.getString(key);
+        if (value != null) {
+          values[key] = value;
+        }
+      }
+      return values;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error(
+          'Error getting all values from SharedPreferences',
+          error: e,
+          stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      await prefs.setString('__test__', 'test');
+      await prefs.remove('__test__');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<int> count() async {
+    try {
+      final prefs = _prefsInstance ?? await _prefs;
+      return prefs.getKeys().length;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error counting values in SharedPreferences',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
 }
 
 /// A Hive implementation of [PersistenceProvider].
@@ -348,6 +481,140 @@ class HivePersistenceProvider implements PersistenceProvider {
       rethrow;
     }
   }
+
+  @override
+  Future<void> saveBatch(Map<String, String> values) async {
+    try {
+      final box = _boxInstance ?? await _box;
+      for (final entry in values.entries) {
+        await box.put(entry.key, entry.value);
+      }
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error saving batch to Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> loadBatch(List<String> keys) async {
+    try {
+      final box = _boxInstance ?? await _box;
+      final values = <String, String>{};
+      for (final key in keys) {
+        final value = box.get(key);
+        if (value != null) {
+          values[key] = value.toString();
+        }
+      }
+      return values;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error loading batch from Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> removeBatch(List<String> keys) async {
+    try {
+      final box = _boxInstance ?? await _box;
+      for (final key in keys) {
+        await box.delete(key);
+      }
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error removing batch from Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<String>> keys() async {
+    try {
+      final box = _boxInstance ?? await _box;
+      return box.keys.map((key) => key.toString()).toList();
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error getting keys from Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<int> size() async {
+    try {
+      final box = _boxInstance ?? await _box;
+      int totalSize = 0;
+      for (final key in box.keys) {
+        final value = box.get(key);
+        if (value != null) {
+          totalSize += key.toString().length + value.toString().length;
+        }
+      }
+      return totalSize;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error calculating size of Hive box',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> exists(String key) async {
+    try {
+      final box = _boxInstance ?? await _box;
+      return box.containsKey(key);
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error checking existence in Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> getAll() async {
+    try {
+      final box = _boxInstance ?? await _box;
+      final allKeys = box.keys.map((key) => key.toString()).toList();
+      final values = <String, String>{};
+      for (final key in allKeys) {
+        final value = box.get(key);
+        if (value != null) {
+          values[key] = value.toString();
+        }
+      }
+      return values;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error getting all values from Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    try {
+      final box = _boxInstance ?? await _box;
+      await box.put('__test__', 'test');
+      await box.delete('__test__');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<int> count() async {
+    try {
+      final box = _boxInstance ?? await _box;
+      return box.length;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error counting values in Hive',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
 }
 
 /// A secure storage implementation of [PersistenceProvider].
@@ -419,6 +686,130 @@ class SecureStoragePersistenceProvider implements PersistenceProvider {
       await _secureStorage.deleteAll();
     } catch (e, stackTrace) {
       ZenLogger.instance.error('Error clearing SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> saveBatch(Map<String, String> values) async {
+    try {
+      for (final entry in values.entries) {
+        await _secureStorage.write(key: entry.key, value: entry.value);
+      }
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error saving batch to SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> loadBatch(List<String> keys) async {
+    try {
+      final results = <String, String>{};
+      for (final key in keys) {
+        final value = await _secureStorage.read(key: key);
+        if (value != null) {
+          results[key] = value;
+        }
+      }
+      return results;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error loading batch from SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> removeBatch(List<String> keys) async {
+    try {
+      for (final key in keys) {
+        await _secureStorage.delete(key: key);
+      }
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error removing batch from SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<String>> keys() async {
+    try {
+      final allData = await _secureStorage.readAll();
+      return allData.keys.toList();
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error getting keys from SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<int> size() async {
+    try {
+      final allData = await _secureStorage.readAll();
+      int totalSize = 0;
+      for (final entry in allData.entries) {
+        if (entry.value != null) {
+          totalSize += entry.key.length + entry.value!.length;
+        }
+      }
+      return totalSize;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error calculating size of SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> exists(String key) async {
+    try {
+      return await _secureStorage.read(key: key) != null;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error checking existence in SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> getAll() async {
+    try {
+      final allData = await _secureStorage.readAll();
+      return Map.fromEntries(
+        allData.entries.where((entry) => entry.value != null).map(
+              (entry) => MapEntry(entry.key, entry.value!),
+            ),
+      );
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error getting all values from SecureStorage',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    try {
+      await _secureStorage.write(key: '__test__', value: 'test');
+      await _secureStorage.delete(key: '__test__');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  @override
+  Future<int> count() async {
+    try {
+      final allData = await _secureStorage.readAll();
+      return allData.length;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error counting values in SecureStorage',
           error: e, stackTrace: stackTrace);
       rethrow;
     }
@@ -518,6 +909,58 @@ class InMemoryPersistenceProvider implements PersistenceProvider {
   Future<void> clear() async {
     _storage.clear();
   }
+
+  @override
+  Future<void> saveBatch(Map<String, String> values) async {
+    _storage.addAll(values);
+  }
+
+  @override
+  Future<Map<String, String>> loadBatch(List<String> keys) async {
+    return Map.fromEntries(
+      keys.map((key) => MapEntry(key, _storage[key] ?? '')),
+    );
+  }
+
+  @override
+  Future<void> removeBatch(List<String> keys) async {
+    for (final key in keys) {
+      _storage.remove(key);
+    }
+  }
+
+  @override
+  Future<bool> exists(String key) async {
+    return _storage.containsKey(key);
+  }
+
+  @override
+  Future<Map<String, String>> getAll() async {
+    return Map.fromEntries(_storage.entries);
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    return true;
+  }
+
+  @override
+  Future<int> count() async {
+    return _storage.length;
+  }
+
+  @override
+  Future<List<String>> keys() async {
+    return _storage.keys.toList();
+  }
+
+  @override
+  Future<int> size() async {
+    return _storage.entries.fold<int>(
+      0,
+      (sum, entry) => sum + entry.key.length + entry.value.length,
+    );
+  }
 }
 
 /// A multi-provider implementation of [PersistenceProvider].
@@ -567,6 +1010,109 @@ class MultiPersistenceProvider implements PersistenceProvider {
       await provider.clear();
     }
     await _defaultProvider.clear();
+  }
+
+  @override
+  Future<bool> exists(String key) async {
+    return await _getProviderForKey(key).exists(key);
+  }
+
+  @override
+  Future<Map<String, String>> getAll() async {
+    final allData = <String, String>{};
+    for (final provider in _providers.values) {
+      allData.addAll(await provider.getAll());
+    }
+    allData.addAll(await _defaultProvider.getAll());
+    return allData;
+  }
+
+  @override
+  Future<bool> isAvailable() async {
+    for (final provider in _providers.values) {
+      if (!await provider.isAvailable()) {
+        return false;
+      }
+    }
+    return await _defaultProvider.isAvailable();
+  }
+
+  @override
+  Future<int> count() async {
+    int total = 0;
+    for (final provider in _providers.values) {
+      total += await provider.count();
+    }
+    total += await _defaultProvider.count();
+    return total;
+  }
+
+  @override
+  Future<List<String>> keys() async {
+    final allKeys = <String>{};
+    for (final provider in _providers.values) {
+      allKeys.addAll(await provider.keys());
+    }
+    allKeys.addAll(await _defaultProvider.keys());
+    return allKeys.toList();
+  }
+
+  @override
+  Future<int> size() async {
+    int total = 0;
+    for (final provider in _providers.values) {
+      total += await provider.size();
+    }
+    total += await _defaultProvider.size();
+    return total;
+  }
+
+  @override
+  Future<void> saveBatch(Map<String, String> values) async {
+    try {
+      for (final entry in values.entries) {
+        await _getProviderForKey(entry.key).save(entry.key, entry.value);
+      }
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error('Error saving batch to MultiPersistenceProvider',
+          error: e, stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> loadBatch(List<String> keys) async {
+    try {
+      final results = <String, String>{};
+      for (final key in keys) {
+        final value = await _getProviderForKey(key).load(key);
+        if (value != null) {
+          results[key] = value;
+        }
+      }
+      return results;
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error(
+          'Error loading batch from MultiPersistenceProvider',
+          error: e,
+          stackTrace: stackTrace);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> removeBatch(List<String> keys) async {
+    try {
+      for (final key in keys) {
+        await _getProviderForKey(key).remove(key);
+      }
+    } catch (e, stackTrace) {
+      ZenLogger.instance.error(
+          'Error removing batch from MultiPersistenceProvider',
+          error: e,
+          stackTrace: stackTrace);
+      rethrow;
+    }
   }
 }
 

@@ -249,19 +249,20 @@ class CounterFeature extends ZenFeature {
       registerDerived('isPositive', () => counterAtom.value > 0);
 
   // Commands
-  late final incrementCommand = registerCommand<void>('increment', () {
+  late final incrementCommand = registerSimpleCommand('increment', () {
     counterAtom.update((value) => value + 1);
   });
 
-  late final decrementCommand = registerCommand<void>('decrement', () {
+  late final decrementCommand = registerSimpleCommand('decrement', () {
     counterAtom.update((value) => value - 1);
   });
 
-  late final resetCommand = registerCommand<void>('reset', () {
+  late final resetCommand = registerSimpleCommand('reset', () {
     counterAtom.value = 0;
   });
 
-  late final addCommand = registerCommand<void>('add', (int amount) {
+  late final addCommand =
+      registerFunctionCommand<int, void>('add', (int amount) {
     counterAtom.update((value) => value + amount);
   });
 
@@ -295,12 +296,12 @@ class ThemeFeature extends ZenFeature {
   late final primaryColorAtom = registerAtom('primaryColor', Colors.blue.value);
 
   // Commands
-  late final toggleThemeCommand = registerCommand<void>('toggleTheme', () {
+  late final toggleThemeCommand = registerSimpleCommand('toggleTheme', () {
     isDarkModeAtom.update((value) => !value);
   });
 
   late final setPrimaryColorCommand =
-      registerCommand<void>('setPrimaryColor', (int colorValue) {
+      registerFunctionCommand('setPrimaryColor', (int colorValue) {
     primaryColorAtom.value = colorValue;
   });
 

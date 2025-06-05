@@ -1,5 +1,3 @@
-// lib/src/core/store_provider.dart
-
 import 'store.dart';
 import 'atom.dart';
 import 'derived.dart';

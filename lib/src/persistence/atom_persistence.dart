@@ -1,5 +1,3 @@
-// lib/src/persistence/atom_persistence.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -8,7 +6,7 @@ import '../core/atom.dart';
 import '../utils/zen_logger.dart';
 
 /// Interface for persistence providers.
-abstract class PersistenceProvider {
+mixin PersistenceProvider {
   /// Saves a value with the given key.
   Future<void> save(String key, String value);
 
@@ -20,6 +18,72 @@ abstract class PersistenceProvider {
 
   /// Clears all values.
   Future<void> clear();
+
+  /// Saves multiple values in a batch operation.
+  Future<void> saveBatch(Map<String, String> values) async {
+    await Future.wait(
+      values.entries.map((entry) => save(entry.key, entry.value)),
+    );
+  }
+
+  /// Loads multiple values in a batch operation.
+  Future<Map<String, String>> loadBatch(List<String> keys) async {
+    final results = await Future.wait(
+      keys.map((key) => load(key).then((value) => MapEntry(key, value))),
+    );
+    return Map.fromEntries(
+      results.where((entry) => entry.value != null).map(
+            (entry) => MapEntry(entry.key, entry.value!),
+          ),
+    );
+  }
+
+  /// Removes multiple values in a batch operation.
+  Future<void> removeBatch(List<String> keys) async {
+    await Future.wait(keys.map((key) => remove(key)));
+  }
+
+  /// Checks if a value exists for the given key.
+  Future<bool> exists(String key) async {
+    return await load(key) != null;
+  }
+
+  /// Gets all keys stored in the provider.
+  Future<List<String>> keys() async {
+    throw UnimplementedError('keys() not implemented');
+  }
+
+  /// Gets all values stored in the provider.
+  Future<Map<String, String>> getAll() async {
+    final allKeys = await keys();
+    return await loadBatch(allKeys);
+  }
+
+  /// Gets the size of the stored data in bytes.
+  Future<int> size() async {
+    final allData = await getAll();
+    return allData.entries.fold<int>(
+      0,
+      (sum, entry) => sum + entry.key.length + entry.value.length,
+    );
+  }
+
+  /// Gets the number of stored values.
+  Future<int> count() async {
+    final allKeys = await keys();
+    return allKeys.length;
+  }
+
+  /// Checks if the provider is available and ready to use.
+  Future<bool> isAvailable() async {
+    try {
+      await save('__test__', 'test');
+      await remove('__test__');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 }
 
 /// A mixin that adds persistence capabilities to an [Atom].
@@ -36,45 +100,87 @@ mixin AtomPersistence<T> on Atom<T> {
   /// Converts a string to an atom value.
   T deserialize(String value);
 
-  /// Saves the current value to persistence.
-  Future<void> save() async {
-    try {
-      await provider.save(persistenceKey, serialize(value));
-      ZenLogger.instance.debug('Saved atom value: $persistenceKey');
-    } catch (e, stackTrace) {
-      // Handle persistence errors
-      ZenLogger.instance.error('Error saving atom value: $persistenceKey',
-          error: e, stackTrace: stackTrace);
-    }
-  }
-
-  /// Loads the value from persistence.
-  Future<void> load() async {
-    try {
-      final storedValue = await provider.load(persistenceKey);
-      if (storedValue != null) {
-        value = deserialize(storedValue);
-        ZenLogger.instance.debug('Loaded atom value: $persistenceKey');
-      } else {
-        ZenLogger.instance
-            .debug('No stored value found for atom: $persistenceKey');
+  /// Saves the current value to persistence with retry logic.
+  Future<void> save({
+    int maxRetries = 3,
+    Duration retryDelay = const Duration(milliseconds: 100),
+  }) async {
+    int retries = 0;
+    while (true) {
+      try {
+        await provider.save(persistenceKey, serialize(value));
+        ZenLogger.instance.debug('Saved atom value: $persistenceKey');
+        return;
+      } catch (e, stackTrace) {
+        retries++;
+        if (retries >= maxRetries) {
+          ZenLogger.instance.error(
+            'Error saving atom value after $maxRetries retries: $persistenceKey',
+            error: e,
+            stackTrace: stackTrace,
+          );
+          rethrow;
+        }
+        await Future.delayed(retryDelay * retries);
       }
-    } catch (e, stackTrace) {
-      // Handle persistence errors
-      ZenLogger.instance.error('Error loading atom value: $persistenceKey',
-          error: e, stackTrace: stackTrace);
     }
   }
 
-  /// Removes the value from persistence.
-  Future<void> remove() async {
-    try {
-      await provider.remove(persistenceKey);
-      ZenLogger.instance.debug('Removed atom value: $persistenceKey');
-    } catch (e, stackTrace) {
-      // Handle persistence errors
-      ZenLogger.instance.error('Error removing atom value: $persistenceKey',
-          error: e, stackTrace: stackTrace);
+  /// Loads the value from persistence with retry logic.
+  Future<void> load({
+    int maxRetries = 3,
+    Duration retryDelay = const Duration(milliseconds: 100),
+  }) async {
+    int retries = 0;
+    while (true) {
+      try {
+        final storedValue = await provider.load(persistenceKey);
+        if (storedValue != null) {
+          value = deserialize(storedValue);
+          ZenLogger.instance.debug('Loaded atom value: $persistenceKey');
+        } else {
+          ZenLogger.instance
+              .debug('No stored value found for atom: $persistenceKey');
+        }
+        return;
+      } catch (e, stackTrace) {
+        retries++;
+        if (retries >= maxRetries) {
+          ZenLogger.instance.error(
+            'Error loading atom value after $maxRetries retries: $persistenceKey',
+            error: e,
+            stackTrace: stackTrace,
+          );
+          rethrow;
+        }
+        await Future.delayed(retryDelay * retries);
+      }
+    }
+  }
+
+  /// Removes the value from persistence with retry logic.
+  Future<void> remove({
+    int maxRetries = 3,
+    Duration retryDelay = const Duration(milliseconds: 100),
+  }) async {
+    int retries = 0;
+    while (true) {
+      try {
+        await provider.remove(persistenceKey);
+        ZenLogger.instance.debug('Removed atom value: $persistenceKey');
+        return;
+      } catch (e, stackTrace) {
+        retries++;
+        if (retries >= maxRetries) {
+          ZenLogger.instance.error(
+            'Error removing atom value after $maxRetries retries: $persistenceKey',
+            error: e,
+            stackTrace: stackTrace,
+          );
+          rethrow;
+        }
+        await Future.delayed(retryDelay * retries);
+      }
     }
   }
 }
